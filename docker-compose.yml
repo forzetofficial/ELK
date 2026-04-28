@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  elasticsearch-hot:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch-hot
+    environment:
+      - node.name=elasticsearch-hot
+      - cluster.name=docker-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - xpack.monitoring.collection.enabled=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./elasticsearch/hot/data:/usr/share/elasticsearch/data
+      - ./elasticsearch/hot/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - elastic
+    restart: unless-stopped
+
+  elasticsearch-warm:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch-warm
+    environment:
+      - node.name=elasticsearch-warm
+      - cluster.name=docker-cluster
+      - discovery.seed_hosts=elasticsearch-hot
+      - cluster.initial_master_nodes=elasticsearch-hot
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - node.attr.box_type=warm
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./elasticsearch/warm/data:/usr/share/elasticsearch/data
+      - ./elasticsearch/warm/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
+    ports:
+      - "9201:9200"
+    networks:
+      - elastic
+    depends_on:
+      - elasticsearch-hot
+    restart: unless-stopped
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: logstash
+    environment:
+      - xpack.monitoring.enabled=false
+    volumes:
+      - ./logstash/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+      - ./logstash/logstash.yml:/usr/share/logstash/config/logstash.yml
+    ports:
+      - "5000:5000/tcp"
+      - "5044:5044"
+      - "9600:9600"
+    networks:
+      - elastic
+    depends_on:
+      - elasticsearch-hot
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch-hot:9200
+      - SERVER_NAME=kibana
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=thisisa32characterslongencryptionkey!
+    volumes:
+      - ./kibana/kibana.yml:/usr/share/kibana/config/kibana.yml
+    ports:
+      - "5601:5601"
+    networks:
+      - elastic
+    depends_on:
+      - elasticsearch-hot
+    restart: unless-stopped
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.11.0
+    container_name: filebeat
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - elastic
+    depends_on:
+      - logstash
+    restart: unless-stopped
+
+  dummy-app:
+    build: ./dummy-app
+    container_name: dummy-app
+    networks:
+      - elastic
+    restart: unless-stopped
+
+networks:
+  elastic:
+    driver: bridge

@@ -1,0 +1,9 @@
+cluster.name: docker-cluster
+node.name: elasticsearch-warm
+node.attr.box_type: warm
+path.data: /usr/share/elasticsearch/data
+path.logs: /usr/share/elasticsearch/logs
+network.host: 0.0.0.0
+discovery.seed_hosts: elasticsearch-hot
+cluster.initial_master_nodes: elasticsearch-hot
+xpack.security.enabled: false
